@@ -174,7 +174,15 @@ export class PortfolioApp {
   private buildHome(): string {
     const c = CONTENT[this.lang];
     const f = new Frame(this.cols, this.rows);
-    const splitAt = Math.min(28, Math.floor(this.cols * 0.36));
+
+    // Adapt split point to portrait width
+    const portraitMaxWidth = ASCII_PORTRAIT.length > 0
+      ? Math.max(...ASCII_PORTRAIT.map(l => visibleLen(l)))
+      : 0;
+    const naturalSplit = Math.min(28, Math.floor(this.cols * 0.36));
+    const splitAt = portraitMaxWidth > naturalSplit - 1
+      ? Math.min(portraitMaxWidth + 1, Math.floor(this.cols * 0.55))
+      : naturalSplit;
 
     f.top();
     f.blank();
@@ -196,7 +204,9 @@ export class PortfolioApp {
       '',
     ];
 
-    const portrait = ASCII_PORTRAIT;
+    // Cap portrait height so footer is always visible
+    const maxPortraitRows = Math.max(1, this.rows - 13);
+    const portrait = ASCII_PORTRAIT.slice(0, maxPortraitRows);
     const totalRows = Math.max(portrait.length, pitchLines.length);
     const leftInner = splitAt - 1;
 
