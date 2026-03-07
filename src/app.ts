@@ -1,6 +1,12 @@
 import type { ServerChannel } from 'ssh2';
 import { A, Frame, visibleLen } from './renderer';
 import { CONTENT, ASCII_PORTRAIT, type Lang } from './content';
+import { NAME_ART } from './ascii';
+
+const STAR_CHARS = ['·', '✦', '⋆', '✧', '˚', '⊹'] as const;
+const HOME_NAME_START   = 1;
+const HOME_PORTRT_START = HOME_NAME_START + NAME_ART.length + 2; // row 8
+const HOME_STAR_ROWS    = [0, HOME_NAME_START + NAME_ART.length, HOME_NAME_START + NAME_ART.length + 1] as const;
 
 type Screen = 'home' | 'projects' | 'about' | 'contact';
 
@@ -13,6 +19,8 @@ export class PortfolioApp {
   private projectIndex = 0;
   private closed = false;
   private quitTimer: ReturnType<typeof setTimeout> | null = null;
+  private starTimer: ReturnType<typeof setInterval> | null = null;
+  private stars: Array<{ row: number; col: number; char: string; on: boolean }> = [];
   private lang: Lang = 'en';
 
   constructor(stream: ServerChannel, dims: { cols: number; rows: number }) {
@@ -24,6 +32,7 @@ export class PortfolioApp {
 
   private init(): void {
     this.stream.write(A.altScreenEnter + A.cursorHide);
+    this.initStars();
     this.render();
     this.stream.on('data', (data: Buffer) => this.handleInput(data));
     this.stream.on('close', () => this.cleanup());
@@ -34,6 +43,7 @@ export class PortfolioApp {
     if (this.closed) return;
     this.cols = Math.max(cols, 60);
     this.rows = Math.max(rows, 20);
+    this.initStars();
     this.render();
   }
 
@@ -43,6 +53,10 @@ export class PortfolioApp {
     if (this.quitTimer) {
       clearTimeout(this.quitTimer);
       this.quitTimer = null;
+    }
+    if (this.starTimer) {
+      clearInterval(this.starTimer);
+      this.starTimer = null;
     }
     try {
       this.stream.write(A.altScreenExit + A.cursorShow + A.reset);
@@ -174,24 +188,18 @@ export class PortfolioApp {
   private buildHome(): string {
     const c = CONTENT[this.lang];
 
-    // Scale portrait to fill the full terminal height
-    const art = this.scaleArt(ASCII_PORTRAIT, this.rows);
-    const artWidth = art.length > 0
-      ? Math.max(...art.map(l => visibleLen(l)))
-      : 0;
-
-    // Right panel starts after the art with a small gap
+    // Portrait fills rows below the name art
+    const portraitHeight = Math.max(4, this.rows - HOME_PORTRT_START);
+    const art = this.scaleArt(ASCII_PORTRAIT, portraitHeight);
+    const artWidth = art.length > 0 ? Math.max(...art.map(l => visibleLen(l))) : 0;
     const gap = 3;
-    const right: string[] = new Array(this.rows).fill('');
 
-    // Name at row 1
-    if (this.rows > 1)  right[1] = A.bold + A.white + CONTENT.name + A.reset;
-
-    // Pitch lines starting at row 3
-    let row = 3;
+    // Right panel content (indexed relative to portrait section)
+    const right: string[] = new Array(portraitHeight).fill('');
+    let row = 1;
     let firstLine = true;
     for (const line of c.pitch) {
-      if (row >= this.rows - 6) break;
+      if (row >= portraitHeight - 6) break;
       if (line === '') { row++; continue; }
       right[row] = firstLine
         ? A.bold + A.white + line + A.reset
@@ -199,33 +207,42 @@ export class PortfolioApp {
       firstLine = false;
       row++;
     }
-
-    // Tabs near bottom
-    const tabRow = this.rows - 4;
-    if (tabRow > 0 && tabRow < this.rows) {
+    const tabRow = portraitHeight - 4;
+    if (tabRow >= 0 && tabRow < portraitHeight) {
       right[tabRow] = c.tabs.map((tab, i) =>
         i === this.selectedTab
           ? A.bold + A.white + tab + A.reset
           : A.dim + tab.toLowerCase() + A.reset
       ).join('   ');
     }
-
-    // Nav hints two rows from bottom
-    const hintRow = this.rows - 2;
-    if (hintRow > 0 && hintRow < this.rows) {
+    const hintRow = portraitHeight - 2;
+    if (hintRow >= 0 && hintRow < portraitHeight) {
       right[hintRow] = A.dim + c.hints.home + A.reset;
     }
 
-    // Assemble: art column + gap + right text
-    const lines: string[] = [];
-    for (let i = 0; i < this.rows; i++) {
+    // Assemble screen line-by-line
+    const lines: string[] = new Array(this.rows).fill('');
+
+    // Big name art (centered)
+    for (let i = 0; i < NAME_ART.length; i++) {
+      const r = HOME_NAME_START + i;
+      if (r >= this.rows) break;
+      const nameLine = NAME_ART[i];
+      const startCol = Math.max(0, Math.floor((this.cols - nameLine.length) / 2));
+      lines[r] = ' '.repeat(startCol) + A.bold + A.white + nameLine + A.reset;
+    }
+
+    // Portrait + right panel
+    for (let i = 0; i < portraitHeight; i++) {
+      const r = HOME_PORTRT_START + i;
+      if (r >= this.rows) break;
       const leftRaw = art[i] ?? '';
       const lv = visibleLen(leftRaw);
       const leftPadded = leftRaw + ' '.repeat(Math.max(0, artWidth - lv));
-      lines.push(leftPadded + ' '.repeat(gap) + (right[i] ?? ''));
+      lines[r] = leftPadded + ' '.repeat(gap) + (right[i] ?? '');
     }
 
-    return A.clear + lines.join('\r\n');
+    return A.clear + lines.join('\r\n') + this.renderStars();
   }
 
   /** Scale art to exactly targetRows lines using nearest-neighbor */
@@ -240,6 +257,46 @@ export class PortfolioApp {
       result.push(art[srcIdx]);
     }
     return result;
+  }
+
+  /** Seed star positions across the blank header rows and start the blink timer */
+  private initStars(): void {
+    if (this.starTimer) {
+      clearInterval(this.starTimer);
+      this.starTimer = null;
+    }
+    this.stars = [];
+    const count = 28;
+    for (let i = 0; i < count; i++) {
+      const starRow = HOME_STAR_ROWS[Math.floor(Math.random() * HOME_STAR_ROWS.length)];
+      const col = 1 + Math.floor(Math.random() * Math.max(1, this.cols - 2));
+      const char = STAR_CHARS[Math.floor(Math.random() * STAR_CHARS.length)];
+      this.stars.push({ row: starRow, col, char, on: Math.random() > 0.5 });
+    }
+    this.starTimer = setInterval(() => {
+      if (this.closed || this.screen !== 'home') return;
+      for (const star of this.stars) {
+        if (Math.random() < 0.3) {
+          star.on = !star.on;
+          if (!star.on && Math.random() < 0.15) {
+            // relocate extinguished stars for more movement
+            star.col = 1 + Math.floor(Math.random() * Math.max(1, this.cols - 2));
+            star.char = STAR_CHARS[Math.floor(Math.random() * STAR_CHARS.length)];
+          }
+        }
+      }
+      this.render();
+    }, 500);
+  }
+
+  /** Write visible stars via cursor-positioning escapes (overlaid after main content) */
+  private renderStars(): string {
+    let out = '';
+    for (const star of this.stars) {
+      if (!star.on) continue;
+      out += `\x1b[${star.row + 1};${star.col + 1}H${A.dim}${star.char}${A.reset}`;
+    }
+    return out;
   }
 
   // ─── Projects screen ────────────────────────────────────────────────────────

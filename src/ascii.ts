@@ -69,6 +69,16 @@ export const CYBERSIGILISM = [
   '⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀',
 ];
 
+// ─── Name logotype (~107 cols wide, needs ≥ 110 cols terminal) ───────────────
+
+export const NAME_ART = [
+  '   ___    _   __  ______   ____    _   __            ____    ____    __  __   _   __   ______   __ ',
+  '  /   |  / | / / /_  __/  / __ \\  / | / /           / __ )  / __ \\  / / / /  / | / /  / ____/  / / ',
+  ' / /| | /  |/ /   / /    / / / / /  |/ /           / __  | / /_/ / / / / /  /  |/ /  / __/    / /  ',
+  '/ ___ |/ /|  /   / /    / /_/ / / /|  /           / /_/ / / _, _/ / /_/ /  / /|  /  / /___   / /___',
+  '/_/  |_|/_/ |_/  /_/     \\____/  /_/ |_/          /_____/  /_/ |_| \\____/   /_/ |_/  \\____/   /_____/',
+];
+
 // ─── Cascade (plain ASCII, ~80 cols wide) ────────────────────────────────────
 // For reference only — too wide for the split portrait panel.
 // Use in a full-width layout if needed.
