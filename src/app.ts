@@ -1,6 +1,6 @@
 import type { ServerChannel } from 'ssh2';
-import { A, Frame, center, visibleLen } from './renderer';
-import { CONTENT, ASCII_PORTRAIT, TABS } from './content';
+import { A, Frame, visibleLen } from './renderer';
+import { CONTENT, ASCII_PORTRAIT, type Lang } from './content';
 
 type Screen = 'home' | 'projects' | 'about' | 'contact';
 
@@ -13,6 +13,7 @@ export class PortfolioApp {
   private projectIndex = 0;
   private closed = false;
   private quitTimer: ReturnType<typeof setTimeout> | null = null;
+  private lang: Lang = 'en';
 
   constructor(stream: ServerChannel, dims: { cols: number; rows: number }) {
     this.stream = stream;
@@ -55,10 +56,10 @@ export class PortfolioApp {
     const key = data.toString('utf8');
 
     // Universal: Ctrl+C, Ctrl+D → quit
-    if (key === '\x03' || key === '\x04') {
-      this.quit();
-      return;
-    }
+    if (key === '\x03' || key === '\x04') { this.quit(); return; }
+
+    // Universal: L → toggle language
+    if (key === 'l' || key === 'L') { this.toggleLang(); return; }
 
     if (this.screen === 'home') {
       this.handleHomeInput(key);
@@ -67,6 +68,11 @@ export class PortfolioApp {
     } else {
       this.handleBackInput(key);
     }
+  }
+
+  private toggleLang(): void {
+    this.lang = this.lang === 'en' ? 'fr' : 'en';
+    this.render();
   }
 
   private handleHomeInput(key: string): void {
@@ -93,13 +99,14 @@ export class PortfolioApp {
   }
 
   private handleProjectsInput(key: string): void {
+    const projects = CONTENT[this.lang].projects;
     switch (key) {
       case '\x1b[A': // Up arrow
         this.projectIndex = Math.max(0, this.projectIndex - 1);
         this.render();
         break;
       case '\x1b[B': // Down arrow
-        this.projectIndex = Math.min(CONTENT.projects.length - 1, this.projectIndex + 1);
+        this.projectIndex = Math.min(projects.length - 1, this.projectIndex + 1);
         this.render();
         break;
       case '\x1b':
@@ -126,10 +133,11 @@ export class PortfolioApp {
     if (this.closed) return;
     this.closed = true;
 
+    const c = CONTENT[this.lang];
     const f = new Frame(this.cols, this.rows);
     f.top();
     for (let i = 0; i < this.rows - 4; i++) f.blank();
-    f.centered(A.dim + 'Connection closed.' + A.reset);
+    f.centered(A.dim + c.goodbye + A.reset);
     f.blank();
     f.bottom();
 
@@ -164,22 +172,27 @@ export class PortfolioApp {
   // ─── Home screen ────────────────────────────────────────────────────────────
 
   private buildHome(): string {
+    const c = CONTENT[this.lang];
     const f = new Frame(this.cols, this.rows);
     const splitAt = Math.min(28, Math.floor(this.cols * 0.36));
 
     f.top();
     f.blank();
     f.centered(A.bold + A.white + CONTENT.name + A.reset);
-    f.centered(A.dim + CONTENT.tagline + A.reset);
+    f.centered(A.dim + c.tagline + A.reset);
     f.blank();
     f.splitHrOpen(splitAt);
 
     const rightWidth = this.cols - splitAt - 3;
     const pitchLines: string[] = [
       '',
-      A.bold + 'Builder. Automator. Maker.' + A.reset,
-      '',
-      ...CONTENT.pitch.map(l => A.dim + l + A.reset),
+      ...c.pitch.map((l, i) =>
+        l === ''
+          ? ''
+          : i === 0
+            ? A.bold + A.white + l + A.reset
+            : A.dim + l + A.reset
+      ),
       '',
     ];
 
@@ -200,7 +213,7 @@ export class PortfolioApp {
     f.splitHr(splitAt);
     f.blank();
 
-    const tabBar = TABS.map((tab, i) =>
+    const tabBar = c.tabs.map((tab, i) =>
       i === this.selectedTab
         ? A.reverse + A.bold + '  ' + tab + '  ' + A.reset
         : A.dim + '  ' + tab + '  ' + A.reset
@@ -209,7 +222,7 @@ export class PortfolioApp {
     f.blank();
 
     f.hr();
-    f.row(A.dim + '  ← → select  ·  ENTER open  ·  Q quit  ·  Ctrl+C exit' + A.reset);
+    f.row(A.dim + c.hints.home + A.reset);
     f.bottom();
 
     return f.render();
@@ -218,17 +231,18 @@ export class PortfolioApp {
   // ─── Projects screen ────────────────────────────────────────────────────────
 
   private buildProjects(): string {
+    const c = CONTENT[this.lang];
     const f = new Frame(this.cols, this.rows);
     const inner = this.cols - 4;
 
     f.top();
     f.blank();
-    f.centered(A.bold + A.white + '— PROJECTS —' + A.reset);
+    f.centered(A.bold + A.white + `— ${c.tabs[0]} —` + A.reset);
     f.blank();
     f.hr();
 
-    for (let i = 0; i < CONTENT.projects.length; i++) {
-      const p = CONTENT.projects[i];
+    for (let i = 0; i < c.projects.length; i++) {
+      const p = c.projects[i];
       const isSelected = i === this.projectIndex;
 
       f.blank();
@@ -244,7 +258,7 @@ export class PortfolioApp {
         f.row('  ' + A.dim + '  ' + p.tags + A.reset);
       }
       f.blank();
-      if (i < CONTENT.projects.length - 1) {
+      if (i < c.projects.length - 1) {
         f.row('  ' + A.dim + '·'.repeat(Math.max(0, inner)) + A.reset);
       }
     }
@@ -253,7 +267,7 @@ export class PortfolioApp {
     for (let i = 0; i < Math.max(0, remaining); i++) f.blank();
 
     f.hr();
-    f.row(A.dim + '  ↑ ↓ navigate  ·  ESC / Q back  ·  Ctrl+C quit' + A.reset);
+    f.row(A.dim + c.hints.projects + A.reset);
     f.bottom();
 
     return f.render();
@@ -262,16 +276,17 @@ export class PortfolioApp {
   // ─── About screen ───────────────────────────────────────────────────────────
 
   private buildAbout(): string {
+    const c = CONTENT[this.lang];
     const f = new Frame(this.cols, this.rows);
 
     f.top();
     f.blank();
-    f.centered(A.bold + A.white + '— ABOUT —' + A.reset);
+    f.centered(A.bold + A.white + `— ${c.tabs[1]} —` + A.reset);
     f.blank();
     f.hr();
     f.blank();
 
-    for (const line of CONTENT.about) {
+    for (const line of c.about) {
       if (line === '') {
         f.blank();
       } else {
@@ -282,14 +297,15 @@ export class PortfolioApp {
     f.blank();
     f.hr();
     f.blank();
-    f.centered(A.dim + 'Step Up Factory  ·  Aura Mail  ·  Canvas CRM  ·  My Results' + A.reset);
+    const projectList = c.projects.map(p => p.name).join('  ·  ');
+    f.centered(A.dim + projectList + A.reset);
     f.blank();
 
     const remaining = this.rows - f.lineCount - 3;
     for (let i = 0; i < Math.max(0, remaining); i++) f.blank();
 
     f.hr();
-    f.row(A.dim + '  ESC / Q back  ·  Ctrl+C quit' + A.reset);
+    f.row(A.dim + c.hints.section + A.reset);
     f.bottom();
 
     return f.render();
@@ -298,21 +314,21 @@ export class PortfolioApp {
   // ─── Contact screen ─────────────────────────────────────────────────────────
 
   private buildContact(): string {
+    const c = CONTENT[this.lang];
     const f = new Frame(this.cols, this.rows);
 
     f.top();
     f.blank();
-    f.centered(A.bold + A.white + '— CONTACT —' + A.reset);
+    f.centered(A.bold + A.white + `— ${c.tabs[2]} —` + A.reset);
     f.blank();
     f.hr();
 
-    // Vertically center the contact items
-    const contentHeight = CONTENT.contact.length * 3; // label + value + blank per item
+    const contentHeight = c.contact.length * 3;
     const available = this.rows - f.lineCount - 5;
     const topPad = Math.max(1, Math.floor((available - contentHeight) / 2));
     for (let i = 0; i < topPad; i++) f.blank();
 
-    for (const item of CONTENT.contact) {
+    for (const item of c.contact) {
       f.centered(A.dim + item.label.toUpperCase() + A.reset);
       f.centered(A.bold + A.white + item.value + A.reset);
       f.blank();
@@ -322,7 +338,7 @@ export class PortfolioApp {
     for (let i = 0; i < Math.max(0, remaining); i++) f.blank();
 
     f.hr();
-    f.row(A.dim + '  ESC / Q back  ·  Ctrl+C quit' + A.reset);
+    f.row(A.dim + c.hints.section + A.reset);
     f.bottom();
 
     return f.render();
