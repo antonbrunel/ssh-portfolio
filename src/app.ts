@@ -22,7 +22,7 @@ export class PortfolioApp {
   }
 
   private init(): void {
-    this.stream.write(A.cursorHide);
+    this.stream.write(A.altScreenEnter + A.cursorHide);
     this.render();
     this.stream.on('data', (data: Buffer) => this.handleInput(data));
     this.stream.on('close', () => this.cleanup());
@@ -44,7 +44,7 @@ export class PortfolioApp {
       this.quitTimer = null;
     }
     try {
-      this.stream.write(A.cursorShow + A.reset);
+      this.stream.write(A.altScreenExit + A.cursorShow + A.reset);
     } catch { /* stream may already be closed */ }
   }
 
@@ -139,7 +139,7 @@ export class PortfolioApp {
 
     this.quitTimer = setTimeout(() => {
       try {
-        this.stream.write(A.cursorShow);
+        this.stream.write(A.altScreenExit + A.cursorShow);
         this.stream.end();
       } catch { /* ignore */ }
     }, 500);
