@@ -61,7 +61,18 @@ function ensureHostKey(): Buffer {
 const hostKey = ensureHostKey();
 let activeConnections = 0;
 
-const server = new Server({ hostKeys: [hostKey] }, (client: Connection) => {
+const server = new Server({
+  hostKeys: [hostKey],
+  algorithms: {
+    kex: [
+      'ecdh-sha2-nistp256',
+      'ecdh-sha2-nistp384',
+      'ecdh-sha2-nistp521',
+      'diffie-hellman-group14-sha256',
+      'diffie-hellman-group14-sha1',
+    ],
+  },
+}, (client: Connection) => {
   activeConnections++;
   console.log(`Client connected (active: ${activeConnections})`);
 

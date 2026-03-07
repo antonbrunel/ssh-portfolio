@@ -209,7 +209,7 @@ export class PortfolioApp {
     f.blank();
 
     f.hr();
-    f.row(A.dim + '  ← → select  ·  ENTER open  ·  Q quit' + A.reset);
+    f.row(A.dim + '  ← → select  ·  ENTER open  ·  Q quit  ·  Ctrl+C exit' + A.reset);
     f.bottom();
 
     return f.render();
