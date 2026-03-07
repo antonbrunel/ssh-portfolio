@@ -173,69 +173,73 @@ export class PortfolioApp {
 
   private buildHome(): string {
     const c = CONTENT[this.lang];
-    const f = new Frame(this.cols, this.rows);
 
-    // Adapt split point to portrait width
-    const portraitMaxWidth = ASCII_PORTRAIT.length > 0
-      ? Math.max(...ASCII_PORTRAIT.map(l => visibleLen(l)))
+    // Scale portrait to fill the full terminal height
+    const art = this.scaleArt(ASCII_PORTRAIT, this.rows);
+    const artWidth = art.length > 0
+      ? Math.max(...art.map(l => visibleLen(l)))
       : 0;
-    const naturalSplit = Math.min(28, Math.floor(this.cols * 0.36));
-    const splitAt = portraitMaxWidth > naturalSplit - 1
-      ? Math.min(portraitMaxWidth + 1, Math.floor(this.cols * 0.55))
-      : naturalSplit;
 
-    f.top();
-    f.blank();
-    f.centered(A.bold + A.white + CONTENT.name + A.reset);
-    f.centered(A.dim + c.tagline + A.reset);
-    f.blank();
-    f.splitHrOpen(splitAt);
+    // Right panel starts after the art with a small gap
+    const gap = 3;
+    const right: string[] = new Array(this.rows).fill('');
 
-    const rightWidth = this.cols - splitAt - 3;
-    const pitchLines: string[] = [
-      '',
-      ...c.pitch.map((l, i) =>
-        l === ''
-          ? ''
-          : i === 0
-            ? A.bold + A.white + l + A.reset
-            : A.dim + l + A.reset
-      ),
-      '',
-    ];
+    // Name at row 1
+    if (this.rows > 1)  right[1] = A.bold + A.white + CONTENT.name + A.reset;
 
-    // Cap portrait height so footer is always visible
-    const maxPortraitRows = Math.max(1, this.rows - 13);
-    const portrait = ASCII_PORTRAIT.slice(0, maxPortraitRows);
-    const totalRows = Math.max(portrait.length, pitchLines.length);
-    const leftInner = splitAt - 1;
-
-    for (let i = 0; i < totalRows; i++) {
-      const leftRaw = portrait[i] ?? '';
-      const rightRaw = pitchLines[i] ?? '';
-      const lv = visibleLen(leftRaw);
-      const rv = visibleLen(rightRaw);
-      const leftPad = leftRaw + ' '.repeat(Math.max(0, leftInner - lv));
-      const rightPad = rightRaw + ' '.repeat(Math.max(0, rightWidth - rv));
-      f.push('│' + leftPad + '│' + ' ' + rightPad + '│');
+    // Pitch lines starting at row 3
+    let row = 3;
+    let firstLine = true;
+    for (const line of c.pitch) {
+      if (row >= this.rows - 6) break;
+      if (line === '') { row++; continue; }
+      right[row] = firstLine
+        ? A.bold + A.white + line + A.reset
+        : A.dim + line + A.reset;
+      firstLine = false;
+      row++;
     }
 
-    f.splitHr(splitAt);
-    f.blank();
+    // Tabs near bottom
+    const tabRow = this.rows - 4;
+    if (tabRow > 0 && tabRow < this.rows) {
+      right[tabRow] = c.tabs.map((tab, i) =>
+        i === this.selectedTab
+          ? A.bold + A.white + tab + A.reset
+          : A.dim + tab.toLowerCase() + A.reset
+      ).join('   ');
+    }
 
-    const tabBar = c.tabs.map((tab, i) =>
-      i === this.selectedTab
-        ? A.reverse + A.bold + '  ' + tab + '  ' + A.reset
-        : A.dim + '  ' + tab + '  ' + A.reset
-    ).join('   ');
-    f.centered(tabBar);
-    f.blank();
+    // Nav hints two rows from bottom
+    const hintRow = this.rows - 2;
+    if (hintRow > 0 && hintRow < this.rows) {
+      right[hintRow] = A.dim + c.hints.home + A.reset;
+    }
 
-    f.hr();
-    f.row(A.dim + c.hints.home + A.reset);
-    f.bottom();
+    // Assemble: art column + gap + right text
+    const lines: string[] = [];
+    for (let i = 0; i < this.rows; i++) {
+      const leftRaw = art[i] ?? '';
+      const lv = visibleLen(leftRaw);
+      const leftPadded = leftRaw + ' '.repeat(Math.max(0, artWidth - lv));
+      lines.push(leftPadded + ' '.repeat(gap) + (right[i] ?? ''));
+    }
 
-    return f.render();
+    return A.clear + lines.join('\r\n');
+  }
+
+  /** Scale art to exactly targetRows lines using nearest-neighbor */
+  private scaleArt(art: string[], targetRows: number): string[] {
+    if (art.length === 0) return new Array(targetRows).fill('');
+    const result: string[] = [];
+    for (let i = 0; i < targetRows; i++) {
+      const srcIdx = Math.min(
+        Math.floor((i / targetRows) * art.length),
+        art.length - 1
+      );
+      result.push(art[srcIdx]);
+    }
+    return result;
   }
 
   // ─── Projects screen ────────────────────────────────────────────────────────
