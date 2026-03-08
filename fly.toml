@@ -1,15 +1,15 @@
-# fly.toml app configuration file generated for app-billowing-dust-1634 on 2026-03-08T23:30:13Z
+# fly.toml app configuration file generated for ssh-portfolio on 2026-03-08T23:34:06Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'app-billowing-dust-1634'
+app = 'ssh-portfolio'
 primary_region = 'iad'
 
 [build]
 
 [http_service]
-  internal_port = 8080
+  internal_port = 2222
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
@@ -20,4 +20,4 @@ primary_region = 'iad'
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 256
+  memory_mb = 1024
