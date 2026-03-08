@@ -5,7 +5,10 @@ import { ANTON_ART, BRUNEL_ART } from './ascii';
 
 const STAR_CHARS = ['·', '✦', '⋆', '✧', '˚', '⊹'] as const;
 // Blank rows in the right panel where stars can appear (0-indexed, relative to screen)
-const HOME_STAR_ROWS = [0, 6, 12] as const;
+// Matches layout: ANTON at rows 2-6, BRUNEL at rows 8-12
+const HOME_STAR_ROWS = [0, 7, 13] as const;
+// Max width of ANTON/BRUNEL art for star confinement
+const NAME_ART_WIDTH = 46;
 
 type Screen = 'home' | 'projects' | 'about' | 'contact';
 
@@ -19,6 +22,7 @@ export class PortfolioApp {
   private closed = false;
   private quitTimer: ReturnType<typeof setTimeout> | null = null;
   private starTimer: ReturnType<typeof setInterval> | null = null;
+  private tabBlink = true;
   private stars: Array<{ row: number; col: number; char: string; on: boolean }> = [];
   private cachedArtWidth = 35; // updated after each buildHome call
   private lang: Lang = 'en';
@@ -195,33 +199,36 @@ export class PortfolioApp {
     const gap = 3;
 
     // Right panel layout (row indices relative to screen):
-    //   0        → blank  (stars)
-    //   1–5      → ANTON_ART
-    //   6        → blank  (stars)
-    //   7–11     → BRUNEL_ART
-    //   12       → blank  (stars)
-    //   13+      → pitch
+    //   0        → blank
+    //   1        → blank  (stars — space above name)
+    //   2–6      → ANTON_ART
+    //   7        → blank  (stars)
+    //   8–12     → BRUNEL_ART
+    //   13       → blank  (stars)
+    //   14–15    → blank  (breathing room before pitch)
+    //   16+      → pitch
     //   rows-4   → tabs
     //   rows-2   → hints
     const right: string[] = new Array(this.rows).fill('');
 
-    // ANTON (rows 1-5)
+    // ANTON (rows 2-6) — light blue
     for (let i = 0; i < ANTON_ART.length; i++) {
-      if (1 + i >= this.rows) break;
-      right[1 + i] = A.bold + A.white + ANTON_ART[i] + A.reset;
+      if (2 + i >= this.rows) break;
+      right[2 + i] = A.bold + A.lightBlue + ANTON_ART[i] + A.reset;
     }
 
-    // BRUNEL (rows 7-11)
+    // BRUNEL (rows 8-12) — light blue
     for (let i = 0; i < BRUNEL_ART.length; i++) {
-      if (7 + i >= this.rows) break;
-      right[7 + i] = A.bold + A.white + BRUNEL_ART[i] + A.reset;
+      if (8 + i >= this.rows) break;
+      right[8 + i] = A.bold + A.lightBlue + BRUNEL_ART[i] + A.reset;
     }
 
-    // Pitch (starting at row 13)
-    let row = 13;
+    // Pitch (starting at row 16, generous spacing below the name)
+    const pitchStart = Math.max(14, Math.min(16, this.rows - 8));
+    let row = pitchStart;
     let firstLine = true;
     for (const line of c.pitch) {
-      if (row >= this.rows - 6) break;
+      if (row >= this.rows - 4) break;
       if (line === '') { row++; continue; }
       right[row] = firstLine
         ? A.bold + A.white + line + A.reset
@@ -230,12 +237,12 @@ export class PortfolioApp {
       row++;
     }
 
-    // Tabs and hints near bottom
+    // Tabs and hints near bottom — selected tab in light blue with soft blink
     const tabRow = this.rows - 4;
     if (tabRow > 0) {
       right[tabRow] = c.tabs.map((tab, i) =>
         i === this.selectedTab
-          ? A.bold + A.white + tab + A.reset
+          ? A.bold + A.lightBlue + (this.tabBlink ? '' : A.dim) + tab + A.reset
           : A.dim + tab.toLowerCase() + A.reset
       ).join('   ');
     }
@@ -270,17 +277,18 @@ export class PortfolioApp {
     return result;
   }
 
-  /** Seed star positions in the right-panel blank rows and start the blink timer */
+  /** Seed star positions confined around the name art area, then start the blink timer */
   private initStars(): void {
     if (this.starTimer) {
       clearInterval(this.starTimer);
       this.starTimer = null;
     }
     this.stars = [];
-    const minCol = this.cachedArtWidth + 4; // stay in the right panel
-    const maxCol = this.cols - 2;
+    const minCol = this.cachedArtWidth + 4;
+    // Constrain stars to the name-art column range — no sprawl on wide terminals
+    const maxCol = Math.min(this.cols - 2, minCol + NAME_ART_WIDTH + 4);
     if (maxCol > minCol) {
-      const count = 24;
+      const count = 10;
       for (let i = 0; i < count; i++) {
         const starRow = HOME_STAR_ROWS[Math.floor(Math.random() * HOME_STAR_ROWS.length)];
         const col = minCol + Math.floor(Math.random() * (maxCol - minCol));
@@ -291,9 +299,9 @@ export class PortfolioApp {
     this.starTimer = setInterval(() => {
       if (this.closed || this.screen !== 'home') return;
       const minC = this.cachedArtWidth + 4;
-      const maxC = this.cols - 2;
+      const maxC = Math.min(this.cols - 2, minC + NAME_ART_WIDTH + 4);
       for (const star of this.stars) {
-        if (Math.random() < 0.3) {
+        if (Math.random() < 0.25) {
           star.on = !star.on;
           if (!star.on && Math.random() < 0.15 && maxC > minC) {
             star.col = minC + Math.floor(Math.random() * (maxC - minC));
@@ -301,8 +309,9 @@ export class PortfolioApp {
           }
         }
       }
+      this.tabBlink = !this.tabBlink;
       this.render();
-    }, 500);
+    }, 600);
   }
 
   /** Write visible stars via cursor-positioning escapes (overlaid after main content) */
@@ -324,7 +333,7 @@ export class PortfolioApp {
 
     f.top();
     f.blank();
-    f.centered(A.bold + A.white + `— ${c.tabs[0]} —` + A.reset);
+    f.centered(A.bold + A.white + c.tabs[0] + A.reset);
     f.blank();
     f.hr();
 
@@ -368,7 +377,7 @@ export class PortfolioApp {
 
     f.top();
     f.blank();
-    f.centered(A.bold + A.white + `— ${c.tabs[1]} —` + A.reset);
+    f.centered(A.bold + A.white + c.tabs[1] + A.reset);
     f.blank();
     f.hr();
     f.blank();
@@ -406,7 +415,7 @@ export class PortfolioApp {
 
     f.top();
     f.blank();
-    f.centered(A.bold + A.white + `— ${c.tabs[2]} —` + A.reset);
+    f.centered(A.bold + A.white + c.tabs[2] + A.reset);
     f.blank();
     f.hr();
 

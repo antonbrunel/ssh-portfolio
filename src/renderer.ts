@@ -6,6 +6,7 @@ export const A = {
   dim:        '\x1b[2m',
   reverse:    '\x1b[7m',
   white:      '\x1b[97m',
+  lightBlue:  '\x1b[94m',
   cursorHide:     '\x1b[?25l',
   cursorShow:     '\x1b[?25h',
   clear:          '\x1b[2J\x1b[H',
