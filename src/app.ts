@@ -1,12 +1,11 @@
 import type { ServerChannel } from 'ssh2';
 import { A, Frame, visibleLen } from './renderer';
 import { CONTENT, ASCII_PORTRAIT, type Lang } from './content';
-import { NAME_ART } from './ascii';
+import { ANTON_ART, BRUNEL_ART } from './ascii';
 
 const STAR_CHARS = ['·', '✦', '⋆', '✧', '˚', '⊹'] as const;
-const HOME_NAME_START   = 1;
-const HOME_PORTRT_START = HOME_NAME_START + NAME_ART.length + 2; // row 8
-const HOME_STAR_ROWS    = [0, HOME_NAME_START + NAME_ART.length, HOME_NAME_START + NAME_ART.length + 1] as const;
+// Blank rows in the right panel where stars can appear (0-indexed, relative to screen)
+const HOME_STAR_ROWS = [0, 6, 12] as const;
 
 type Screen = 'home' | 'projects' | 'about' | 'contact';
 
@@ -21,6 +20,7 @@ export class PortfolioApp {
   private quitTimer: ReturnType<typeof setTimeout> | null = null;
   private starTimer: ReturnType<typeof setInterval> | null = null;
   private stars: Array<{ row: number; col: number; char: string; on: boolean }> = [];
+  private cachedArtWidth = 35; // updated after each buildHome call
   private lang: Lang = 'en';
 
   constructor(stream: ServerChannel, dims: { cols: number; rows: number }) {
@@ -188,18 +188,40 @@ export class PortfolioApp {
   private buildHome(): string {
     const c = CONTENT[this.lang];
 
-    // Portrait fills rows below the name art
-    const portraitHeight = Math.max(4, this.rows - HOME_PORTRT_START);
-    const art = this.scaleArt(ASCII_PORTRAIT, portraitHeight);
+    // Portrait scales to fill the full terminal height
+    const art = this.scaleArt(ASCII_PORTRAIT, this.rows);
     const artWidth = art.length > 0 ? Math.max(...art.map(l => visibleLen(l))) : 0;
+    this.cachedArtWidth = artWidth;
     const gap = 3;
 
-    // Right panel content (indexed relative to portrait section)
-    const right: string[] = new Array(portraitHeight).fill('');
-    let row = 1;
+    // Right panel layout (row indices relative to screen):
+    //   0        → blank  (stars)
+    //   1–5      → ANTON_ART
+    //   6        → blank  (stars)
+    //   7–11     → BRUNEL_ART
+    //   12       → blank  (stars)
+    //   13+      → pitch
+    //   rows-4   → tabs
+    //   rows-2   → hints
+    const right: string[] = new Array(this.rows).fill('');
+
+    // ANTON (rows 1-5)
+    for (let i = 0; i < ANTON_ART.length; i++) {
+      if (1 + i >= this.rows) break;
+      right[1 + i] = A.bold + A.white + ANTON_ART[i] + A.reset;
+    }
+
+    // BRUNEL (rows 7-11)
+    for (let i = 0; i < BRUNEL_ART.length; i++) {
+      if (7 + i >= this.rows) break;
+      right[7 + i] = A.bold + A.white + BRUNEL_ART[i] + A.reset;
+    }
+
+    // Pitch (starting at row 13)
+    let row = 13;
     let firstLine = true;
     for (const line of c.pitch) {
-      if (row >= portraitHeight - 6) break;
+      if (row >= this.rows - 6) break;
       if (line === '') { row++; continue; }
       right[row] = firstLine
         ? A.bold + A.white + line + A.reset
@@ -207,39 +229,28 @@ export class PortfolioApp {
       firstLine = false;
       row++;
     }
-    const tabRow = portraitHeight - 4;
-    if (tabRow >= 0 && tabRow < portraitHeight) {
+
+    // Tabs and hints near bottom
+    const tabRow = this.rows - 4;
+    if (tabRow > 0) {
       right[tabRow] = c.tabs.map((tab, i) =>
         i === this.selectedTab
           ? A.bold + A.white + tab + A.reset
           : A.dim + tab.toLowerCase() + A.reset
       ).join('   ');
     }
-    const hintRow = portraitHeight - 2;
-    if (hintRow >= 0 && hintRow < portraitHeight) {
+    const hintRow = this.rows - 2;
+    if (hintRow > 0) {
       right[hintRow] = A.dim + c.hints.home + A.reset;
     }
 
-    // Assemble screen line-by-line
-    const lines: string[] = new Array(this.rows).fill('');
-
-    // Big name art (centered)
-    for (let i = 0; i < NAME_ART.length; i++) {
-      const r = HOME_NAME_START + i;
-      if (r >= this.rows) break;
-      const nameLine = NAME_ART[i];
-      const startCol = Math.max(0, Math.floor((this.cols - nameLine.length) / 2));
-      lines[r] = ' '.repeat(startCol) + A.bold + A.white + nameLine + A.reset;
-    }
-
-    // Portrait + right panel
-    for (let i = 0; i < portraitHeight; i++) {
-      const r = HOME_PORTRT_START + i;
-      if (r >= this.rows) break;
+    // Assemble: portrait (left) + gap + right panel
+    const lines: string[] = [];
+    for (let i = 0; i < this.rows; i++) {
       const leftRaw = art[i] ?? '';
       const lv = visibleLen(leftRaw);
       const leftPadded = leftRaw + ' '.repeat(Math.max(0, artWidth - lv));
-      lines[r] = leftPadded + ' '.repeat(gap) + (right[i] ?? '');
+      lines.push(leftPadded + ' '.repeat(gap) + (right[i] ?? ''));
     }
 
     return A.clear + lines.join('\r\n') + this.renderStars();
@@ -259,28 +270,33 @@ export class PortfolioApp {
     return result;
   }
 
-  /** Seed star positions across the blank header rows and start the blink timer */
+  /** Seed star positions in the right-panel blank rows and start the blink timer */
   private initStars(): void {
     if (this.starTimer) {
       clearInterval(this.starTimer);
       this.starTimer = null;
     }
     this.stars = [];
-    const count = 28;
-    for (let i = 0; i < count; i++) {
-      const starRow = HOME_STAR_ROWS[Math.floor(Math.random() * HOME_STAR_ROWS.length)];
-      const col = 1 + Math.floor(Math.random() * Math.max(1, this.cols - 2));
-      const char = STAR_CHARS[Math.floor(Math.random() * STAR_CHARS.length)];
-      this.stars.push({ row: starRow, col, char, on: Math.random() > 0.5 });
+    const minCol = this.cachedArtWidth + 4; // stay in the right panel
+    const maxCol = this.cols - 2;
+    if (maxCol > minCol) {
+      const count = 24;
+      for (let i = 0; i < count; i++) {
+        const starRow = HOME_STAR_ROWS[Math.floor(Math.random() * HOME_STAR_ROWS.length)];
+        const col = minCol + Math.floor(Math.random() * (maxCol - minCol));
+        const char = STAR_CHARS[Math.floor(Math.random() * STAR_CHARS.length)];
+        this.stars.push({ row: starRow, col, char, on: Math.random() > 0.5 });
+      }
     }
     this.starTimer = setInterval(() => {
       if (this.closed || this.screen !== 'home') return;
+      const minC = this.cachedArtWidth + 4;
+      const maxC = this.cols - 2;
       for (const star of this.stars) {
         if (Math.random() < 0.3) {
           star.on = !star.on;
-          if (!star.on && Math.random() < 0.15) {
-            // relocate extinguished stars for more movement
-            star.col = 1 + Math.floor(Math.random() * Math.max(1, this.cols - 2));
+          if (!star.on && Math.random() < 0.15 && maxC > minC) {
+            star.col = minC + Math.floor(Math.random() * (maxC - minC));
             star.char = STAR_CHARS[Math.floor(Math.random() * STAR_CHARS.length)];
           }
         }
