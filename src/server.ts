@@ -32,15 +32,17 @@ function generateRsaKey(): string {
   return privateKey as string;
 }
 
-function ensureHostKey(): Buffer {
+function ensureHostKey(): string {
   if (process.env.SSH_HOST_KEY) {
     const raw = process.env.SSH_HOST_KEY.trim();
-    const buf = Buffer.from(raw, 'base64');
-    if (buf.length < 100) {
-      console.error('SSH_HOST_KEY appears invalid (decoded length too short). Aborting.');
+    // Support both raw PEM and base64-encoded PEM
+    const decoded = raw.startsWith('-----') ? raw : Buffer.from(raw, 'base64').toString('utf8');
+    if (decoded.length < 100 || !decoded.includes('PRIVATE KEY')) {
+      console.error('SSH_HOST_KEY appears invalid (expected PEM private key). Aborting.');
       process.exit(1);
     }
-    return buf;
+    console.log(`Host key loaded from SSH_HOST_KEY env var (${decoded.length} bytes)`);
+    return decoded;
   }
 
   const keyPath = process.env.HOST_KEY_PATH ?? join(__dirname, '..', 'keys', 'host_key');
@@ -51,9 +53,12 @@ function ensureHostKey(): Buffer {
     const privateKey = generateRsaKey();
     writeFileSync(keyPath, privateKey, { mode: 0o600 });
     console.log(`Host key saved to ${keyPath}`);
+    return privateKey;
   }
 
-  return readFileSync(keyPath);
+  const pem = readFileSync(keyPath, 'utf8');
+  console.log(`Host key loaded from ${keyPath} (${pem.length} bytes, starts: ${pem.slice(0, 40).replace(/\n/g, '\\n')})`);
+  return pem;
 }
 
 // ─── Server ──────────────────────────────────────────────────────────────────
@@ -63,6 +68,7 @@ let activeConnections = 0;
 
 const server = new Server({
   hostKeys: [hostKey],
+  debug: (msg: string) => console.log('[ssh2]', msg),
   algorithms: {
     kex: [
       'ecdh-sha2-nistp256',
@@ -146,14 +152,14 @@ const server = new Server({
   });
 });
 
-server.listen(SSH_PORT, '0.0.0.0', () => {
-  console.log(`SSH Portfolio running on port ${SSH_PORT}`);
-  console.log(`Connect with: ssh -p ${SSH_PORT} portfolio@localhost`);
-});
-
 server.on('error', (err: Error) => {
   console.error('Server error:', err);
   process.exit(1);
+});
+
+server.listen(SSH_PORT, '0.0.0.0', () => {
+  console.log(`SSH Portfolio running on port ${SSH_PORT}`);
+  console.log(`Connect with: ssh -p ${SSH_PORT} portfolio@localhost`);
 });
 
 // ─── Graceful shutdown ───────────────────────────────────────────────────────
