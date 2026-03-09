@@ -12,7 +12,7 @@ primary_region = "cdg"
   proxy_proto = false
 
   [[services.ports]]
-    port = 22
+    port = 2022
     handlers = []
 
   [[services.tcp_checks]]
