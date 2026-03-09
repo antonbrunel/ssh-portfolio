@@ -57,7 +57,7 @@ function ensureHostKey(): string {
   }
 
   const pem = readFileSync(keyPath, 'utf8');
-  console.log(`Host key loaded from ${keyPath} (${pem.length} bytes, starts: ${pem.slice(0, 40).replace(/\n/g, '\\n')})`);
+  console.log(`Host key loaded from ${keyPath}`);
   return pem;
 }
 
@@ -68,7 +68,6 @@ let activeConnections = 0;
 
 const server = new Server({
   hostKeys: [hostKey],
-  debug: (msg: string) => console.log('[ssh2]', msg),
   algorithms: {
     kex: [
       'ecdh-sha2-nistp256',

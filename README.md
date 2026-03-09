@@ -101,7 +101,20 @@ This ensures the same fingerprint across restarts.
 ### Step 5 — Connect
 
 ```bash
-ssh -p PORT portfolio@your-service.zeabur.app
+ssh -p 32013 portfolio@43.157.1.94
+```
+
+Or add to `~/.ssh/config` for a cleaner command:
+
+```
+Host antton
+    HostName 43.157.1.94
+    Port 32013
+    User portfolio
+```
+
+```bash
+ssh antton
 ```
 
 ---
